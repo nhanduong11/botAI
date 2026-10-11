@@ -21,9 +21,10 @@
       overflow: hidden;
       font-family: system-ui, -apple-system, sans-serif;
       color: #fff;
+      touch-action: manipulation;
     }
 
-    /* Video camera ngầm */
+    /* Video camera ngầm chạy Face Tracking */
     #webcam {
       position: absolute;
       width: 1px;
@@ -43,7 +44,7 @@
       cursor: pointer;
     }
 
-    /* Mắt robot phong cách Cyberpunk OLED */
+    /* Đôi mắt robot OLED */
     .eye {
       width: 85px;
       height: 135px;
@@ -54,12 +55,12 @@
       will-change: transform;
     }
 
-    /* Trạng thái chớp mắt */
+    /* Chớp mắt */
     .blink {
       height: 12px !important;
     }
 
-    /* Đang lắng nghe: Mắt tròn xanh lá */
+    /* Đang nghe: Mắt tròn xanh lá */
     .listening .eye {
       width: 110px;
       height: 110px;
@@ -68,7 +69,7 @@
       box-shadow: 0 0 35px #38ef7d;
     }
 
-    /* Đang suy nghĩ: Mắt hẹp màu vàng */
+    /* Đang suy nghĩ: Mắt dẹt màu vàng */
     .thinking .eye {
       height: 35px;
       background: #fbc531;
@@ -87,32 +88,16 @@
       100% { transform: scaleY(1.15); }
     }
 
-    /* Thông tin trạng thái */
+    /* Trạng thái văn bản */
     .status-text {
       margin-top: 40px;
-      font-size: 15px;
+      font-size: 16px;
       color: #a4b0be;
       text-align: center;
       max-width: 85%;
-      min-height: 24px;
-      line-height: 1.4;
-    }
-
-    .config-box {
-      position: absolute;
-      bottom: 15px;
-      opacity: 0.25;
-      transition: opacity 0.3s;
-    }
-    .config-box:hover, .config-box:focus-within { opacity: 1; }
-    input {
-      background: #1e272e;
-      border: 1px solid #485460;
-      color: #fff;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      outline: none;
+      min-height: 48px;
+      line-height: 1.5;
+      padding: 0 10px;
     }
   </style>
 </head>
@@ -127,26 +112,24 @@
     <div class="eye" id="rightEye"></div>
   </div>
 
-  <div class="status-text" id="statusLabel">Chạm vào màn hình 1 lần để kích hoạt robot</div>
-
-  <div class="config-box">
-    <input type="password" id="apiKey" placeholder="Dán Gemini API Key vào đây">
-  </div>
+  <div class="status-text" id="statusLabel">Chạm vào màn hình 1 lần để đánh thức Robot</div>
 
   <script>
+    // GẮN SẴN GEMINI API KEY
+    const GEMINI_API_KEY = "AIzaSyAyeIq90DOaJLbngocB7ie2iY4yiiEJRe4";
+
     const webcamElement = document.getElementById('webcam');
     const leftEye = document.getElementById('leftEye');
     const rightEye = document.getElementById('rightEye');
     const faceSocket = document.getElementById('faceSocket');
     const statusLabel = document.getElementById('statusLabel');
-    const apiKeyInput = document.getElementById('apiKey');
 
     let currentX = 0;
     let currentY = 0;
-    const MAX_OFFSET_X = 35; // Giới hạn biên độ liếc ngang
-    const MAX_OFFSET_Y = 25; // Giới hạn biên độ liếc dọc
+    const MAX_OFFSET_X = 35;
+    const MAX_OFFSET_Y = 25;
 
-    // 1. CHỚP MẮT TỰ NHIÊN
+    // 1. TỰ ĐỘNG CHỚP MẮT
     function triggerBlink() {
       if (!faceSocket.classList.contains('speaking') && !faceSocket.classList.contains('thinking')) {
         leftEye.classList.add('blink');
@@ -167,11 +150,10 @@
         const faceCenterX = bbox.xCenter;
         const faceCenterY = bbox.yCenter;
 
-        // Tính tọa độ liếc theo gương
+        // Tính tọa độ liếc mắt theo gương
         const targetOffsetX = (0.5 - faceCenterX) * 2 * MAX_OFFSET_X;
         const targetOffsetY = (faceCenterY - 0.5) * 2 * MAX_OFFSET_Y;
 
-        // Nội suy mượt mà
         currentX += (targetOffsetX - currentX) * 0.35;
         currentY += (targetOffsetY - currentY) * 0.35;
 
@@ -181,7 +163,6 @@
           rightEye.style.transform = transformValue;
         }
       } else {
-        // Trở về vị trí trung tâm khi không thấy mặt
         currentX += (0 - currentX) * 0.1;
         currentY += (0 - currentY) * 0.1;
         if (!faceSocket.classList.contains('speaking')) {
@@ -201,7 +182,7 @@
     });
     faceDetection.onResults(onFaceResults);
 
-    // Kích hoạt camera trước ở độ phân giải thấp để tiết kiệm pin và mát máy
+    // Kích hoạt camera trước
     const camera = new Camera(webcamElement, {
       onFrame: async () => {
         await faceDetection.send({ image: webcamElement });
@@ -212,20 +193,22 @@
     });
 
     camera.start().catch((err) => {
-      console.warn("Lỗi mở camera:", err);
+      console.warn("Lỗi camera:", err);
     });
 
-   // CẤU HÌNH NHẬN DIỆN GIỌNG NÓI CHUẨN HOÁ CHO ANDROID
+    // 3. THU ÂM & ĐÀM THOẠI RẢNH TAY LIÊN TỤC (TỐI ƯU CHO ANDROID CHROME)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
     let isBotSpeaking = false;
     let isContinuousActive = false;
+    let silenceTimer = null;
+    let recognizedText = "";
 
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
       recognition.lang = 'vi-VN';
-      recognition.interimResults = true; // Bật để thấy ngay chữ đang nói
-      recognition.continuous = false;
+      recognition.interimResults = true; // Bắt tiếng tức thì theo thời gian thực
+      recognition.continuous = true;     // Giữ mic không bị ngắt quãng
 
       recognition.onstart = () => {
         if (!isBotSpeaking) {
@@ -233,56 +216,86 @@
         }
       };
 
-      recognition.onresult = async (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
+      recognition.onresult = (event) => {
+        let currentTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+          currentTranscript += event.results[i][0].transcript;
         }
 
-        // Hiển thị chữ tạm thời để biết mic đang bắt tiếng
-        if (interimTranscript) {
-          statusLabel.innerText = `Đang nghe: "${interimTranscript}"`;
-        }
+        if (currentTranscript.trim().length > 0) {
+          recognizedText = currentTranscript.trim();
+          statusLabel.innerText = `Đang nghe: "${recognizedText}"`;
 
-        // Khi nói dứt câu
-        if (finalTranscript.trim().length > 0) {
-          setMode('thinking', `Xếp: "${finalTranscript}"`);
-          await callGemini(finalTranscript.trim());
+          // Tự động chốt câu khi người dùng ngừng nói 1.2 giây
+          clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            if (recognizedText.length > 0) {
+              const textToSend = recognizedText;
+              recognizedText = "";
+              triggerProcessQuery(textToSend);
+            }
+          }, 1200);
         }
       };
 
       recognition.onerror = (event) => {
-        console.warn('Lỗi mic:', event.error);
         if (event.error === 'not-allowed') {
-          statusLabel.innerText = 'Chưa cấp quyền Micro! Bấm vào ổ khóa để cấp quyền.';
+          statusLabel.innerText = 'Chưa cấp quyền Micro! Bấm vào biểu tượng cài đặt cạnh link để mở.';
         }
       };
 
       recognition.onend = () => {
         if (isContinuousActive && !isBotSpeaking) {
-          setTimeout(() => restartListening(), 300);
+          setTimeout(() => restartListening(), 200);
         }
       };
     }
-    // 4. KẾT NỐI GEMINI API
-    async function callGemini(prompt) {
-      const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) {
-        speak('Xếp chưa dán API Key vào ô bên dưới kìa.');
-        return;
-      }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    function restartListening() {
+      if (!isContinuousActive || isBotSpeaking) return;
+      try {
+        recognition.start();
+      } catch (err) {}
+    }
+
+    function startContinuousMode() {
+      if (!isContinuousActive) {
+        isContinuousActive = true;
+
+        // Mở khóa âm thanh trình duyệt
+        const unlockAudio = new SpeechSynthesisUtterance('Em nghe đây xếp');
+        unlockAudio.lang = 'vi-VN';
+        unlockAudio.rate = 1.1;
+        unlockAudio.onend = () => {
+          restartListening();
+        };
+        window.speechSynthesis.speak(unlockAudio);
+
+        setMode('listening', 'Robot đã sẵn sàng! Mời xếp nói...');
+      } else {
+        // Nếu chạm lại khi đang chạy -> khởi động lại mic nếu bị kẹt
+        restartListening();
+      }
+    }
+
+    async function triggerProcessQuery(text) {
+      try { recognition.stop(); } catch(e) {}
+      setMode('thinking', `Xếp: "${text}"`);
+      await callGemini(text);
+    }
+
+    function setMode(mode, statusMsg) {
+      faceSocket.className = 'face-socket ' + (mode === 'idle' ? '' : mode);
+      if (statusMsg) statusLabel.innerText = statusMsg;
+    }
+
+    // 4. GỌI GEMINI API
+    async function callGemini(prompt) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
       const payload = {
         system_instruction: {
           parts: [{ 
-            text: "Bạn là một robot để bàn thông minh, thân thiện. Luôn xưng hô gọi người dùng là 'xếp'. Phản hồi cực kỳ ngắn gọn, tự nhiên và súc tích (chỉ từ 1 đến 2 câu) để giao tiếp bằng giọng nói." 
+            text: "Bạn là một robot để bàn thông minh và lễ phép. Luôn xưng hô gọi người dùng là 'xếp'. Phản hồi cực kỳ ngắn gọn, tự nhiên và súc tích (chỉ từ 1 đến 2 câu ngắn) để phù hợp nói chuyện trực tiếp." 
           }]
         },
         contents: [{ role: "user", parts: [{ text: prompt }] }]
@@ -295,14 +308,14 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Em chưa nghe rõ, xếp nói lại nhé.";
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Em chưa nghe rõ, xếp nói lại giúp em nhé.";
         speak(reply);
       } catch (e) {
-        speak('Kết nối mạng đang bị chập chờn rồi xếp ơi.');
+        speak('Mạng bên em bị chập chờn rồi xếp ơi.');
       }
     }
 
-    // 5. PHÁT GIỌNG NÓI (TTS) VÀ TỰ ĐỘNG LẮNG NGHE TIẾP
+    // 5. PHÁT ÂM THANH & TỰ ĐỘNG LẮNG NGHE LẠI
     function speak(text) {
       isBotSpeaking = true;
       try { recognition.stop(); } catch(e) {}
@@ -315,11 +328,11 @@
 
       utterance.onend = () => {
         isBotSpeaking = false;
-        setMode('idle', 'Đang đợi xếp nói tiếp...');
-        // Chờ 450ms để phòng hết vang loa rồi mới kích hoạt lại micro
+        setMode('listening', 'Đang nghe xếp nói...');
+        // Chờ 400ms dứt tiếng loa rồi bật lại micro
         setTimeout(() => {
           restartListening();
-        }, 450);
+        }, 400);
       };
 
       utterance.onerror = () => {
