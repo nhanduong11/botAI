@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Desk Robot AI</title>
   
-  <!-- MediaPipe Face Detection từ CDN -->
+  <!-- MediaPipe Face Detection -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
 
@@ -24,7 +24,7 @@
       touch-action: manipulation;
     }
 
-    /* Video camera ngầm chạy Face Tracking */
+    /* Video camera ngầm */
     #webcam {
       position: absolute;
       width: 1px;
@@ -76,7 +76,7 @@
       box-shadow: 0 0 30px #fbc531;
     }
 
-    /* Đang nói: Mắt chuyển động nhịp đập */
+    /* Đang nói: Mắt chuyển động nhịp */
     .speaking .eye {
       background: #ff4757;
       box-shadow: 0 0 35px #ff4757;
@@ -90,20 +90,51 @@
 
     /* Trạng thái văn bản */
     .status-text {
-      margin-top: 40px;
+      margin-top: 35px;
       font-size: 16px;
-      color: #a4b0be;
+      color: #00f2fe;
       text-align: center;
-      max-width: 85%;
-      min-height: 48px;
+      max-width: 90%;
+      min-height: 55px;
       line-height: 1.5;
       padding: 0 10px;
+    }
+
+    /* Khung nhập API Key */
+    .config-box {
+      position: absolute;
+      bottom: 20px;
+      display: flex;
+      gap: 8px;
+      width: 85%;
+      max-width: 420px;
+      z-index: 10;
+    }
+    .config-box input {
+      flex: 1;
+      background: rgba(30, 39, 46, 0.85);
+      border: 1px solid #485460;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+    .config-box button {
+      background: #00f2fe;
+      color: #070a12;
+      border: none;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
-  <!-- Video ẩn cho Face Tracking -->
+  <!-- Video camera ngầm -->
   <video id="webcam" playsinline autoplay muted></video>
 
   <!-- Khuôn mặt Robot -->
@@ -114,15 +145,31 @@
 
   <div class="status-text" id="statusLabel">Chạm vào màn hình 1 lần để đánh thức Robot</div>
 
-  <script>
-    // GẮN SẴN GEMINI API KEY
-    const GEMINI_API_KEY = "AIzaSyAyeIq90DOaJLbngocB7ie2iY4yiiEJRe4";
+  <!-- Khung nhập API Key -->
+  <div class="config-box">
+    <input type="password" id="apiKeyInput" placeholder="Nhập hoặc dán Gemini API Key...">
+    <button onclick="saveApiKey()">Lưu Key</button>
+  </div>
 
+  <script>
     const webcamElement = document.getElementById('webcam');
     const leftEye = document.getElementById('leftEye');
     const rightEye = document.getElementById('rightEye');
     const faceSocket = document.getElementById('faceSocket');
     const statusLabel = document.getElementById('statusLabel');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+
+    // Tự động load API Key từ bộ nhớ máy (hoặc dùng key mặc định nếu có sẵn)
+    const savedKey = localStorage.getItem('gemini_api_key') || "AIzaSyAyeIq90DOaJLbngocB7ie2iY4yiiEJRe4";
+    apiKeyInput.value = savedKey;
+
+    function saveApiKey() {
+      const key = apiKeyInput.value.trim();
+      if (key) {
+        localStorage.setItem('gemini_api_key', key);
+        alert('Đã lưu API Key thành công!');
+      }
+    }
 
     let currentX = 0;
     let currentY = 0;
@@ -150,7 +197,6 @@
         const faceCenterX = bbox.xCenter;
         const faceCenterY = bbox.yCenter;
 
-        // Tính tọa độ liếc mắt theo gương
         const targetOffsetX = (0.5 - faceCenterX) * 2 * MAX_OFFSET_X;
         const targetOffsetY = (faceCenterY - 0.5) * 2 * MAX_OFFSET_Y;
 
@@ -182,7 +228,6 @@
     });
     faceDetection.onResults(onFaceResults);
 
-    // Kích hoạt camera trước
     const camera = new Camera(webcamElement, {
       onFrame: async () => {
         await faceDetection.send({ image: webcamElement });
@@ -196,7 +241,21 @@
       console.warn("Lỗi camera:", err);
     });
 
-    // 3. THU ÂM & ĐÀM THOẠI RẢNH TAY LIÊN TỤC (TỐI ƯU CHO ANDROID CHROME)
+    // 3. TỐI ƯU HỆ THỐNG GIỌNG NÓI TIẾNG VIỆT (TTS)
+    let vietnameseVoice = null;
+
+    function initVoices() {
+      const voices = window.speechSynthesis.getVoices();
+      // Tìm giọng tiếng Việt chuẩn của Google hoặc thiết bị
+      vietnameseVoice = voices.find(v => v.lang === 'vi-VN' || v.lang === 'vi_VN' || v.lang.includes('vi'));
+    }
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = initVoices;
+      initVoices();
+    }
+
+    // 4. THU ÂM VÀ LẮNG NGHE LIÊN TỤC
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
     let isBotSpeaking = false;
@@ -207,8 +266,8 @@
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
       recognition.lang = 'vi-VN';
-      recognition.interimResults = true; // Bắt tiếng tức thì theo thời gian thực
-      recognition.continuous = true;     // Giữ mic không bị ngắt quãng
+      recognition.interimResults = true;
+      recognition.continuous = true;
 
       recognition.onstart = () => {
         if (!isBotSpeaking) {
@@ -226,7 +285,6 @@
           recognizedText = currentTranscript.trim();
           statusLabel.innerText = `Đang nghe: "${recognizedText}"`;
 
-          // Tự động chốt câu khi người dùng ngừng nói 1.2 giây
           clearTimeout(silenceTimer);
           silenceTimer = setTimeout(() => {
             if (recognizedText.length > 0) {
@@ -234,13 +292,13 @@
               recognizedText = "";
               triggerProcessQuery(textToSend);
             }
-          }, 1200);
+          }, 1100);
         }
       };
 
       recognition.onerror = (event) => {
         if (event.error === 'not-allowed') {
-          statusLabel.innerText = 'Chưa cấp quyền Micro! Bấm vào biểu tượng cài đặt cạnh link để mở.';
+          statusLabel.innerText = 'Chưa cấp quyền Micro!';
         }
       };
 
@@ -261,19 +319,8 @@
     function startContinuousMode() {
       if (!isContinuousActive) {
         isContinuousActive = true;
-
-        // Mở khóa âm thanh trình duyệt
-        const unlockAudio = new SpeechSynthesisUtterance('Em nghe đây xếp');
-        unlockAudio.lang = 'vi-VN';
-        unlockAudio.rate = 1.1;
-        unlockAudio.onend = () => {
-          restartListening();
-        };
-        window.speechSynthesis.speak(unlockAudio);
-
-        setMode('listening', 'Robot đã sẵn sàng! Mời xếp nói...');
+        speak('Em nghe đây xếp.');
       } else {
-        // Nếu chạm lại khi đang chạy -> khởi động lại mic nếu bị kẹt
         restartListening();
       }
     }
@@ -289,13 +336,19 @@
       if (statusMsg) statusLabel.innerText = statusMsg;
     }
 
-    // 4. GỌI GEMINI API
+    // 5. GỌI GEMINI API
     async function callGemini(prompt) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        speak('Xếp chưa nhập API Key kìa.');
+        return;
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const payload = {
         system_instruction: {
           parts: [{ 
-            text: "Bạn là một robot để bàn thông minh và lễ phép. Luôn xưng hô gọi người dùng là 'xếp'. Phản hồi cực kỳ ngắn gọn, tự nhiên và súc tích (chỉ từ 1 đến 2 câu ngắn) để phù hợp nói chuyện trực tiếp." 
+            text: "Bạn là một robot để bàn thông minh và lễ phép. Luôn xưng hô gọi người dùng là 'xếp'. Phản hồi cực kỳ ngắn gọn, tự nhiên và súc tích (chỉ từ 1 đến 2 câu ngắn) để đọc rõ ràng qua loa điện thoại." 
           }]
         },
         contents: [{ role: "user", parts: [{ text: prompt }] }]
@@ -315,21 +368,29 @@
       }
     }
 
-    // 5. PHÁT ÂM THANH & TỰ ĐỘNG LẮNG NGHE LẠI
+    // 6. PHÁT ÂM THANH RÕ TIẾNG & TỰ ĐỘNG LẮNG NGHE LẠI
     function speak(text) {
       isBotSpeaking = true;
       try { recognition.stop(); } catch(e) {}
 
-      setMode('speaking', text);
+      setMode('speaking', `Robot: "${text}"`);
+
+      // Hủy mọi âm thanh tồn đọng trước đó
+      window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'vi-VN';
-      utterance.rate = 1.05;
+      utterance.rate = 0.95; // Tốc độ vừa phải, rõ từng chữ
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0; // Âm lượng tối đa
+
+      if (vietnameseVoice) {
+        utterance.voice = vietnameseVoice;
+      }
 
       utterance.onend = () => {
         isBotSpeaking = false;
         setMode('listening', 'Đang nghe xếp nói...');
-        // Chờ 400ms dứt tiếng loa rồi bật lại micro
         setTimeout(() => {
           restartListening();
         }, 400);
