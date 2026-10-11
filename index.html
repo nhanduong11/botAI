@@ -215,7 +215,7 @@
       console.warn("Lỗi mở camera:", err);
     });
 
-    // 3. ĐÀM THOẠI LIÊN TỤC KHÔNG CHẠM TAY
+   // CẤU HÌNH NHẬN DIỆN GIỌNG NÓI CHUẨN HOÁ CHO ANDROID
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
     let isBotSpeaking = false;
@@ -224,7 +224,7 @@
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
       recognition.lang = 'vi-VN';
-      recognition.interimResults = false;
+      recognition.interimResults = true; // Bật để thấy ngay chữ đang nói
       recognition.continuous = false;
 
       recognition.onstart = () => {
@@ -234,51 +234,42 @@
       };
 
       recognition.onresult = async (event) => {
-        const userText = event.results[0][0].transcript.trim();
-        if (userText.length > 0) {
-          setMode('thinking', `Xếp: "${userText}"`);
-          await callGemini(userText);
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        // Hiển thị chữ tạm thời để biết mic đang bắt tiếng
+        if (interimTranscript) {
+          statusLabel.innerText = `Đang nghe: "${interimTranscript}"`;
+        }
+
+        // Khi nói dứt câu
+        if (finalTranscript.trim().length > 0) {
+          setMode('thinking', `Xếp: "${finalTranscript}"`);
+          await callGemini(finalTranscript.trim());
         }
       };
 
       recognition.onerror = (event) => {
-        // Bỏ qua sự kiện no-speech khi môi trường yên tĩnh
-        if (event.error !== 'no-speech') {
-          console.warn('Speech error:', event.error);
+        console.warn('Lỗi mic:', event.error);
+        if (event.error === 'not-allowed') {
+          statusLabel.innerText = 'Chưa cấp quyền Micro! Bấm vào ổ khóa để cấp quyền.';
         }
       };
 
       recognition.onend = () => {
         if (isContinuousActive && !isBotSpeaking) {
-          setTimeout(() => restartListening(), 100);
+          setTimeout(() => restartListening(), 300);
         }
       };
     }
-
-    function restartListening() {
-      if (!isContinuousActive || isBotSpeaking) return;
-      try {
-        recognition.start();
-      } catch (err) {}
-    }
-
-    function startContinuousMode() {
-      if (!isContinuousActive) {
-        isContinuousActive = true;
-        // Bật phát âm thanh mồi để mở khóa chính sách Autoplay trên Android
-        const emptyUtterance = new SpeechSynthesisUtterance('');
-        window.speechSynthesis.speak(emptyUtterance);
-        
-        restartListening();
-        setMode('idle', 'Đã kích hoạt chế độ rảnh tay liên tục!');
-      }
-    }
-
-    function setMode(mode, statusMsg) {
-      faceSocket.className = 'face-socket ' + (mode === 'idle' ? '' : mode);
-      if (statusMsg) statusLabel.innerText = statusMsg;
-    }
-
     // 4. KẾT NỐI GEMINI API
     async function callGemini(prompt) {
       const apiKey = apiKeyInput.value.trim();
